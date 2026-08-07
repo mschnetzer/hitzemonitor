@@ -3,7 +3,7 @@ on:
   push:
     branches: master
   schedule:
-    - cron: '45 21 * * *' 
+    - cron: '0 8 * * *' 
 
 name: Quarto Publish
 
@@ -20,7 +20,7 @@ jobs:
         uses: quarto-dev/quarto-actions/setup@v2
 
       - name: Install dependencies
-        run: sudo apt-get install libcurl4-openssl-dev libfontconfig1-dev libharfbuzz-dev libfribidi-dev
+        run: sudo apt-get install libcurl4-openssl-dev libfontconfig1-dev libharfbuzz-dev libfribidi-dev libfreetype6-dev libpng-dev libtiff5-dev libjpeg-dev libwebp-dev
 
       - name: Install R
         uses: r-lib/actions/setup-r@v2
