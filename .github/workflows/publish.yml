@@ -3,8 +3,7 @@ on:
   push:
     branches: master
   schedule:
-    - cron: '0 23 * * *' # every day at 9am
-    - timezone: Europe/Vienna
+    - cron: '0 22 * * *' 
 
 name: Quarto Publish
 
