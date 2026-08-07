@@ -26,7 +26,7 @@ theme:
 #| echo: false
 #| message: false
 #| warning: false
-librarian::shelf(tidyverse,lubridate, curl, httr, jsonlite, glue, scales, bslib, bsicons, quarto, gghighlight, rvest, janitor, stringi, countrycode, htmlwidgets, shiny, MetBrewer, plotly, crosstalk)
+librarian::shelf(tidyverse,lubridate, httr, jsonlite, glue, scales, bslib, bsicons, quarto, gghighlight, rvest, janitor, stringi, countrycode, htmlwidgets, shiny, MetBrewer, plotly, crosstalk)
 ```
 
 ```{r data}
@@ -35,7 +35,7 @@ librarian::shelf(tidyverse,lubridate, curl, httr, jsonlite, glue, scales, bslib,
 #| message: false
 #| warning: false
 
-tempwien <- httr::GET(glue::glue("https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d?parameters=tlmax,tlmin,rr&start=1950-01-01&end={today()}&station_ids=105"))
+tempwien <- GET(glue::glue("https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d?parameters=tlmax,tlmin,rr&start=1950-01-01&end={today()}&station_ids=105"))
 
 url <- "https://en.wikipedia.org/wiki/List_of_weather_records#Highest_temperatures_ever_recorded"
 raw <- data.frame()
