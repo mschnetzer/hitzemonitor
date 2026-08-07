@@ -1,0 +1,292 @@
+---
+title: "Hitzemonitor"
+project: 
+    type: website
+
+format: 
+    dashboard:
+        expandable: false
+        scrolling: false
+        orientation: rows
+        nav-buttons: 
+            - icon: "envelope"
+              href: "mailto:matthias.schnetzer@akwien.at"
+            - icon: "github"
+              href: "https://github.com/mschnetzer"
+            - icon: "bluesky"
+              href: "https://bsky.app/profile/matschnetzer.bsky.social"
+theme: 
+    - solar
+    - heat_dash.scss
+
+---
+
+```{r setup}
+#| include: false
+#| echo: false
+#| message: false
+#| warning: false
+librarian::shelf(tidyverse,lubridate, httr, jsonlite, glue, scales, bslib, bsicons, quarto, gghighlight, rvest, janitor, stringi, countrycode, htmlwidgets, shiny, MetBrewer, plotly, crosstalk)
+```
+
+```{r data}
+#| include: false
+#| echo: false
+#| message: false
+#| warning: false
+
+tempwien <- GET(glue::glue("https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d?parameters=tlmax,tlmin,rr&start=1950-01-01&end={today()}&station_ids=105"))
+
+url <- "https://en.wikipedia.org/wiki/List_of_weather_records#Highest_temperatures_ever_recorded"
+raw <- data.frame()
+records <- url |> 
+  read_html() |> 
+  html_nodes(xpath = '//*[@id="mw1A"]') |> 
+  html_table(fill=TRUE) |> 
+  nth(1)
+
+rekorde <- records |> clean_names() |> 
+  mutate(country = stri_extract_first_regex(country_region, "^[^\\(]+"),
+         year = as.numeric(stri_extract_last_regex(date, "\\d{4}")),
+         temp = as.numeric(stri_extract_first_regex(temperature, "[:graph:]+(?= ?)")),
+         continent = fct_rev(ifelse(is.na(temp), country_region, NA))) |> 
+  fill(continent) |>
+  select(country,year,temp,continent, date) |> 
+  mutate(continent = fct_recode(continent, "Afrika" = "Africa", "Antarktis" = "Antarctica", "Asien" = "Asia",
+                              "Europa" = "Europe", "Nordamerika" = "North America", 
+                              "Ozeanien" = "Oceania", "Südamerika" = "South America"),
+        ccode = countrycode(country, origin = "country.name", destination = "iso3c")) |>
+  drop_na() |> 
+  filter(continent != "Antarktis")
+
+```
+
+## Row
+
+```{r hitzetage}
+data <- fromJSON(rawToChar(tempwien$content))
+
+tmax <- map_dfc(data$features$properties$parameters$tlmax$data, ~ .x) |> 
+  mutate(time = as.Date(data$timestamps)) |> 
+  rename(tmax = `...1`) 
+
+tmax_filter <- tmax |> 
+  filter(month(time) < month(today()) |
+    (month(time) == month(today()) & day(time) <= day(today()))
+  )
+
+findat <- tmax_filter |>
+  filter(tmax >= 30) |>  count(year(time), .drop = FALSE) |> 
+  rename(year = `year(time)`)
+
+lasttmax <- findat |> slice_max(year, n = 1) |> pull(n)
+avgtmax <- findat |> filter(year >= 1960, year <= 1990) |> summarise(avg = mean(n, na.rm = TRUE)) |> pull(avg)
+
+value_box(
+  theme = value_box_theme(bg = "#8e0808"),
+  showcase = bsicons::bs_icon("sun"),
+  title = "Hitzetage in Wien",
+  value = scales::comma(lasttmax),
+  p(glue::glue("{comma(lasttmax - avgtmax, accuracy = 1)} Tage {ifelse(lasttmax > avgtmax, 'mehr', 'weniger')} als Ø 1960-1990"))
+)
+```
+
+```{r tropennächte}
+data <- fromJSON(rawToChar(tempwien$content))
+
+tmin <- map_dfc(data$features$properties$parameters$tlmin$data, ~ .x) |> 
+  mutate(time = as.Date(data$timestamps)) |> 
+  rename(tmin = `...1`) 
+
+tmin_filter <- tmin |> 
+  filter(month(time) < month(today()) |
+    (month(time) == month(today()) & day(time) <= day(today()))
+  )
+
+findat <- tmin_filter |>
+  filter(tmin >= 20) |>  count(year(time), .drop = FALSE) |> 
+  rename(year = `year(time)`)
+
+lasttmin <- findat |> slice_max(year, n = 1) |> pull(n)
+avgtmin <- findat |> filter(year >= 1960, year <= 1990) |> summarise(avg = mean(n, na.rm = TRUE)) |> pull(avg)
+
+value_box(
+  theme = value_box_theme(bg = "#ba3f01"),
+  showcase = bsicons::bs_icon("moon-stars"),
+  title = "Tropennächte in Wien",
+  value = scales::comma(lasttmin),
+  p(glue::glue("{comma(lasttmin - avgtmin, accuracy = 1)} Nächte {ifelse(lasttmin > avgtmin, 'mehr', 'weniger')} als Ø 1960-1990"))
+)
+```
+
+```{r atrekord}
+atrekord <- rekorde |> 
+  filter(country == "Austria") |> 
+  mutate(date = as.Date(date, format = "%d %B %Y"))
+
+
+value_box(
+  theme = value_box_theme(bg = "#c57300"),
+  showcase = bsicons::bs_icon("thermometer-sun"),
+  title = "Extremwert in Österreich",
+  value = scales::comma(atrekord$temp, suffix = "°C"),
+  p(glue::glue("gemessen am {format(max(atrekord$date), '%d.%m.%Y')}"))
+)
+```
+
+## Row {.fill}
+
+### Column {width=55%}
+
+::: {.card title="Globale Hitzerekorde<i class='bi bi-globe-europe-africa'></i>" .fill}
+
+```{r rekorde}
+rekplot <- rekorde |> 
+  reframe(count = n(), countries = paste(glue::glue("{ccode} ({temp}°)"), collapse = "<br>"), .by = c(year, continent)) |>
+  ggplot(aes(x = year, y = count, fill=continent, 
+              text = glue::glue("{year}<br>{continent}: {count} Rekord{ifelse(count > 1, 'e', '')}<br>{countries}"))) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_x_continuous(breaks = seq(1900,2020,20), expand = expansion(mult = c(0.02, 0.02))) +
+  scale_fill_manual(values = met.brewer("Lakota"), name = NULL) +
+  labs(y = "Anzahl neuer Rekordwerte", x = NULL) +
+  theme_minimal(base_family = "Roboto Condensed", base_size = 14) +
+  theme(legend.position = "top",
+        legend.text = element_text(color = "white", size = 11),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        panel.background = element_rect(fill = "transparent", color = NA),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_line(linewidth = 0.3, color = alpha("white", 0.3)),
+        axis.title.y = element_text(color = "white", size = 11),
+        axis.text = element_text(color = "white"))
+
+ggplotly(rekplot, tooltip = "text") |>
+    layout(hovermode = "compare", legend = list(traceorder = "reversed", itemclick = "FALSE"),
+     hoverlabel = list(bgcolor = "white", font = list(family = "Roboto Condensed"))) |> 
+    config(displayModeBar = FALSE, displaylogo = FALSE, responsive = TRUE)
+```
+
+:::
+
+### Column {width=45%}
+
+#### Row {.fill}
+
+::: {.card title="Extremwetterereignisse in Wien<i class='bi bi-graph-up'></i>" .fill}
+
+<div class="btn-group heat-toggle" role="group">
+  <button id="show-hot" class="btn btn-hot active" type="button">
+    Hitzetage (>30°C)
+  </button>
+  <button id="show-night" class="btn btn-night" type="button">
+    Tropennächte (>20°C)
+  </button>
+  <button id="show-rain" class="btn btn-rain" type="button">
+    Starkregentage (>25l/m2)
+  </button>
+</div>
+
+```{r extremverlauf}
+data <- fromJSON(rawToChar(tempwien$content))
+
+tmax <- map_dfc(data$features$properties$parameters$tlmax$data, ~ .x) |> 
+  mutate(time = as.Date(data$timestamps)) |> 
+  rename(tmax = `...1`) |> 
+  filter(tmax >= 30) |> 
+  count(year(time), .drop = FALSE) |> 
+  rename(year = `year(time)`, Hitzetage = n)
+
+tmin <- map_dfc(data$features$properties$parameters$tlmin$data, ~ .x) |> 
+  mutate(time = as.Date(data$timestamps)) |> 
+  rename(tmin = `...1`) |> 
+  filter(tmin >= 20) |> 
+  count(year(time), .drop = FALSE) |> 
+  rename(year = `year(time)`, Tropennächte = n)
+
+nied <- map_dfc(data$features$properties$parameters$rr$data, ~ .x) |> 
+  mutate(time = as.Date(data$timestamps)) |> 
+  rename(nied = `...1`) |> 
+  filter(nied >= 25) |> 
+  count(year(time), .drop = FALSE) |> 
+  rename(year = `year(time)`, Starkregentage = n)
+
+tage <- tmax |>
+  left_join(tmin, by = "year") |>
+  left_join(nied, by = "year") |>
+  pivot_longer(cols = c(Hitzetage, Tropennächte, Starkregentage), names_to = "type", values_to = "n") |> 
+  mutate(type = factor(type, levels = c("Hitzetage", "Tropennächte", "Starkregentage")))
+
+
+verlauf <- ggplot(tage, aes(x = year, y = n, fill = type, text = glue::glue("{year}: {n}"))) +
+  geom_col(position = "identity") +
+  scale_fill_manual(values = c("Hitzetage" = "#8e0808", "Tropennächte" = "#ba3f01", "Starkregentage" = "#007bff")) +
+  scale_x_continuous(breaks = seq(1950, 2020, 10), expand = expansion(mult = c(0.02, 0.02))) +
+  scale_y_continuous(expand = expansion(mult = c(0.02, 0.02))) +
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_family = "Roboto Condensed", base_size = 12) +
+  theme(plot.background = element_rect(fill = "transparent", color = NA),
+    panel.background = element_rect(fill = "transparent", color = NA),
+    legend.position = "none",
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major = element_line(linewidth = 0.3, color = alpha("white", 0.3)),
+    axis.text = element_text(color = "white"))
+
+p <- ggplotly(verlauf, tooltip = "text")
+p$elementId <- "heatplot"
+p$x$data[[1]]$visible <- TRUE
+p$x$data[[2]]$visible <- FALSE
+p$x$data[[3]]$visible <- FALSE
+
+p <- p |> 
+  layout(hoverlabel = list(bgcolor = "white", font = list(family = "Roboto Condensed", color = "black"))) |>
+  config(displayModeBar = FALSE, displaylogo = FALSE, responsive = TRUE)
+
+p
+
+```
+
+<script>
+window.addEventListener("load", function () {
+  const plot = document.getElementById("heatplot");
+  const hot = document.getElementById("show-hot");
+  const night = document.getElementById("show-night");
+  const rain = document.getElementById("show-rain");
+  hot.addEventListener("click", function () {
+      Plotly.restyle(
+          plot,
+          {visible: [true,false,false]}
+      );
+      hot.classList.add("active");
+      night.classList.remove("active");
+      rain.classList.remove("active");
+  });
+
+  night.addEventListener("click", function () {
+      Plotly.restyle(
+          plot,
+          {visible: [false,true,false]}
+      );
+      night.classList.add("active");
+      hot.classList.remove("active");
+      rain.classList.remove("active");
+  });
+
+  rain.addEventListener("click", function () {
+      Plotly.restyle(
+          plot,
+          {visible: [false,false,true]}
+      );
+      rain.classList.add("active");
+      hot.classList.remove("active");
+      night.classList.remove("active");
+  });
+});
+</script>
+
+:::
+
+#### Row
+
+::: {.card title="Information<i class='bi bi-info-circle-fill'></i>" class="info-card" .flow}
+Quellen: Geosphere, Wikipedia. Stand: `r format(today(), '%d.%m.%Y')`.
+:::

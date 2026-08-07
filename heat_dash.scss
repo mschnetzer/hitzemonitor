@@ -1,0 +1,129 @@
+@import url("https://fonts.googleapis.com/css2?family=Anton+SC&family=Barlow+Condensed:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Oswald:wght@200..700&family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Roboto+Slab:wght@100..900&&family=Roboto+Condensed:ital,wght@0,100..900;1,100..900&display=swap");
+
+/*-- scss:defaults --*/
+$font-family-sans-serif: "Fira Sans";
+$h2-font-size:          1.6rem !default;
+$headings-font-weight:  500 !default;
+$link-color: tomato;
+
+/*-- scss:rules --*/
+h1, h2, h3, h4, h5, h6 {
+  text-shadow: -1px -1px 0 rgba(0, 0, 0, .3);
+}
+
+/*-- Navigation width and color of menu items --*/
+
+.navbar-title {
+  font-family: "Anton SC", sans-serif !important;
+  font-size: 1.8rem !important;
+  color: white !important;
+  text-align: left;
+}
+
+.navbar-brand {
+  margin-right: auto !important;
+}
+
+/*-- Value boxes --*/
+.bslib-value-box .value-box-value {
+    font-family: "Fira Sans";
+    font-size: clamp(1.3rem, 4vw, 2rem);
+    font-weight: 700;
+}
+
+.bslib-value-box .value-box-title {
+    font-family: "Roboto Slab";
+    font-size: clamp(1.0rem, 3vw, 1.3rem) !important;
+}
+
+.bslib-value-box p {
+    font-family: "Roboto Slab";
+    font-size: clamp(0.8rem, 3vw, 1.1rem);
+    font-weight: normal !important;
+}
+
+/*-- Cards title and contents for quotes --*/
+
+.card-header {
+  font-family: "Fira Sans", sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.info-card {
+  font-family: "Fira Sans", sans-serif;
+  font-size: 0.8rem;
+}
+
+.card-top{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:.4rem;
+}
+
+.card-title{
+  font-family:"Fira Sans",sans-serif;
+  font-size:.8rem;
+  font-weight:600;
+  text-transform:uppercase;
+}
+
+
+/* Umschalter über dem Plot */
+
+.heat-toggle {
+  display: inline-flex;
+  gap: .4rem;
+  margin-bottom: .6rem;
+}
+
+.heat-toggle .btn {
+  border: none;
+  border-radius: 999px;
+  padding: .22rem .9rem;
+  font-family: "Fira Sans", sans-serif;
+  font-size: .68rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: white;
+  transition: .2s;
+}
+
+
+/* aktive Buttons */
+.heat-toggle .btn-hot.active {
+  background: #8e0808 !important;
+  color: white !important;
+}
+
+.heat-toggle .btn-night.active {
+  background: #ba3f01 !important;
+  color: white !important;
+}
+
+.heat-toggle .btn-rain.active {
+  background: #007bff !important;
+  color: white !important;
+}
+
+/* inaktive Buttons */
+.heat-toggle .btn-hot:not(.active) {
+  background: #5f0505 !important;
+  color: rgba(255,255,255,.7);
+}
+
+.heat-toggle .btn-night:not(.active) {
+  background: #7f2a00 !important;
+  color: rgba(255,255,255,.7);
+}
+
+.heat-toggle .btn-rain:not(.active) {
+  background: #003b7a !important;
+  color: rgba(255,255,255,.7);
+}
+
+.heat-toggle .btn:hover {
+  filter: brightness(1.08);
+}
