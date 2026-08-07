@@ -86,7 +86,7 @@ value_box(
   theme = value_box_theme(bg = "#8e0808"),
   showcase = bsicons::bs_icon("sun"),
   title = "Hitzetage in Wien",
-  value = scales::comma(lasttmax),
+  value = scales::comma(lasttmax, accuracy = .1),
   p(glue::glue("{comma(lasttmax - avgtmax, accuracy = 1)} Tage {ifelse(lasttmax > avgtmax, 'mehr', 'weniger')} als Ø 1960-1990"))
 )
 ```
