@@ -86,7 +86,7 @@ value_box(
   theme = value_box_theme(bg = "#8e0808"),
   showcase = bsicons::bs_icon("sun"),
   title = "Hitzetage in Wien",
-  value = scales::comma(lasttmax, accuracy = .1),
+  value = scales::comma(lasttmax),
   p(glue::glue("{comma(lasttmax - avgtmax, accuracy = 1)} Tage {ifelse(lasttmax > avgtmax, 'mehr', 'weniger')} als Ø 1960-1990"))
 )
 ```
@@ -128,8 +128,8 @@ atrekord <- rekorde |>
 value_box(
   theme = value_box_theme(bg = "#c57300"),
   showcase = bsicons::bs_icon("thermometer-sun"),
-  title = "Extremwert in Österreich",
-  value = scales::comma(atrekord$temp, suffix = "°C"),
+  title = "Hitzerekord in Österreich",
+  value = scales::comma(atrekord$temp, suffix = "°C", accuracy = .1),
   p(glue::glue("gemessen am {format(max(atrekord$date), '%d.%m.%Y')}"))
 )
 ```
