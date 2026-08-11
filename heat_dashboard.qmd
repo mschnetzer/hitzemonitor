@@ -26,7 +26,7 @@ theme:
 #| echo: false
 #| message: false
 #| warning: false
-librarian::shelf(tidyverse,lubridate, httr, jsonlite, glue, scales, bslib, bsicons, quarto, gghighlight, rvest, janitor, stringi, countrycode, htmlwidgets, shiny, MetBrewer, plotly, giscoR, leaflet, DT, patchwork)
+librarian::shelf(tidyverse,lubridate, httr, jsonlite, glue, scales, bslib, bsicons, quarto, gghighlight, rvest, janitor, stringi, countrycode, htmlwidgets, shiny, MetBrewer, plotly, leaflet, DT, patchwork)
 ```
 
 ```{r data}
@@ -53,8 +53,6 @@ wiendata <- fromJSON(rawToChar(tempwien$content))
 howadata <- fromJSON(rawToChar(temphowa$content))
 autdata <- fromJSON(rawToChar(tempaut$content))
 autdata_thisyear <- fromJSON(rawToChar(tempaut_thisyear$content))
-
-atmap <- gisco_get_countries(year = 2024, country = "AT", resolution = "3", epsg = 4326)
 
 # Daily data for Vienna
 wien <- tibble(
@@ -405,7 +403,7 @@ tropentage_stations <- austria |>
 
 pal <- leaflet::colorNumeric("YlOrRd", domain = tropentage_stations$tage_tropen)
 
-leaflet(atmap, 
+leaflet( 
     height = "100vh",
     options = leafletOptions(minZoom = 6.8, maxZoom = 6.8, boxZoom = FALSE, zoomControl = FALSE, dragging = FALSE, keyboard = FALSE, doubleClickZoom = FALSE, attributionControl = FALSE)) |> 
     addProviderTiles(providers$USGS.USTopo) |>
