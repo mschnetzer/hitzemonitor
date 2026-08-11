@@ -26,7 +26,7 @@ theme:
 #| echo: false
 #| message: false
 #| warning: false
-librarian::shelf(tidyverse,lubridate, httr, jsonlite, glue, scales, bslib, bsicons, quarto, gghighlight, rvest, janitor, stringi, countrycode, htmlwidgets, shiny, MetBrewer, plotly, leaflet, DT, patchwork)
+librarian::shelf(tidyverse,lubridate, httr, jsonlite, glue, scales, bslib, bsicons, quarto, gghighlight, rvest, janitor, stringi, countrycode, htmlwidgets, shiny, MetBrewer, plotly, giscoR, leaflet, DT, patchwork)
 ```
 
 ```{r data}
@@ -53,6 +53,8 @@ wiendata <- fromJSON(rawToChar(tempwien$content))
 howadata <- fromJSON(rawToChar(temphowa$content))
 autdata <- fromJSON(rawToChar(tempaut$content))
 autdata_thisyear <- fromJSON(rawToChar(tempaut_thisyear$content))
+
+atmap <- gisco_get_countries(year = 2024, country = "AT", resolution = "3", epsg = 4326)
 
 # Daily data for Vienna
 wien <- tibble(
@@ -397,25 +399,25 @@ value_box(
 ::: {.card title="Anzahl der Hitzetage in diesem Jahr<i class='bi bi-sun-fill'></i>" .fill}
 
 ```{r atmap}
-tropentage_stations <- austria |> 
-  filter(!is.na(tage_tropen)) |> 
-  slice_max(time, n = 1, by = station)
+heatmap <- atmap |> 
+  ggplot() + 
+  geom_sf(fill = "gray95") +
+  geom_point(data = austria |> filter(!is.na(tage_tropen)) |> slice_max(time, n = 1, by = name), 
+      aes(x = lon, y = lat, color = tage_tropen, text = glue::glue("<span style='color:darkred;font-size:120%;font-family:Roboto Condensed;'>{name}</span><br>",
+      "<span style='font-size:100%;font-family:Roboto Condensed;'>{time}: {tage_tropen} Hitzetage</span>")), size = 2) +
+  scale_color_gradient(low = "yellow", high = "darkred") +
+  labs(x = NULL, y = NULL, color = "Hitzetage", size = "Hitzetage") +
+  theme_minimal(base_family = "Roboto Condensed", base_size = 14) +
+  theme(legend.position = "none",
+        plot.background = element_rect(fill = "transparent", color = NA),
+        panel.background = element_rect(fill = "transparent", color = NA),
+        panel.grid = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank())
 
-pal <- leaflet::colorNumeric("YlOrRd", domain = tropentage_stations$tage_tropen)
-
-leaflet( 
-    height = "100vh",
-    options = leafletOptions(minZoom = 6.8, maxZoom = 6.8, boxZoom = FALSE, zoomControl = FALSE, dragging = FALSE, keyboard = FALSE, doubleClickZoom = FALSE, attributionControl = FALSE)) |> 
-    addProviderTiles(providers$USGS.USTopo) |>
-    addProviderTiles(providers$Stadia.StamenTonerLines) |>
-    addCircleMarkers(data = tropentage_stations, lng = ~lon, lat = ~lat,
-    fillColor = ~pal(tage_tropen), weight = 1.5, color = "black", fillOpacity = 1, radius = 5.5,
-    label = ~lapply(glue::glue(
-      "<span style='color:darkred;font-size:150%;font-family:Roboto Condensed;'>{name}</span><br>",
-      "<span style='font-size:120%;font-family:Roboto Condensed;'>{time}: {tage_tropen} Hitzetage</span>"
-    ), htmltools::HTML),
-    labelOptions = labelOptions(direction = "top")) |>  
-    setView(lng = 13.5, lat = 47.5, 6.8)
+ggplotly(heatmap, tooltip = "text") |>
+    layout(hovermode = "compare", hoverlabel = list(bgcolor = "white", font = list(family = "Roboto Condensed"))) |> 
+    config(displayModeBar = FALSE, displaylogo = FALSE, responsive = TRUE)
 ```
 
 :::
