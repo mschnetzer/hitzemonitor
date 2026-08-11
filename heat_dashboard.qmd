@@ -26,7 +26,7 @@ theme:
 #| echo: false
 #| message: false
 #| warning: false
-librarian::shelf(tidyverse,lubridate, httr, jsonlite, glue, scales, bslib, bsicons, quarto, gghighlight, rvest, janitor, stringi, countrycode, htmlwidgets, shiny, MetBrewer, plotly, crosstalk)
+librarian::shelf(tidyverse,lubridate, httr, jsonlite, glue, scales, bslib, bsicons, quarto, gghighlight, rvest, janitor, stringi, countrycode, htmlwidgets, shiny, MetBrewer, plotly, giscoR, leaflet, DT, patchwork)
 ```
 
 ```{r data}
@@ -34,8 +34,65 @@ librarian::shelf(tidyverse,lubridate, httr, jsonlite, glue, scales, bslib, bsico
 #| echo: false
 #| message: false
 #| warning: false
+ 
+meta <- GET("https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1y/metadata")
+metadat <- fromJSON(rawToChar(meta$content))
+stations <- map_dfc(metadat$stations, ~ .x) |> 
+  filter(is_active == TRUE) |> 
+  select(id, name, state, lat, lon)
 
-tempwien <- GET(glue::glue("https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d?parameters=tlmax,tlmin,rr&start=1950-01-01&end={today()}&station_ids=105"))
+tempwien <- GET(glue::glue("https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d?parameters=tlmax,tlmin,rr&start=1985-01-01&end={today()}&station_ids=5925"))
+
+temphowa <- GET(glue::glue("https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1m?parameters=tlmax_mittel&start=1900-01-01&end={today()}&station_ids=105"))
+
+tempaut <- GET(glue::glue("https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1y?parameters=tlmax,tage_tropen&start=1950-01-01&end={today()}&station_ids={paste0(stations$id, collapse = ',')}"))
+
+tempaut_thisyear <- GET(glue::glue("https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d?parameters=tlmax&start={year(today())}-01-01&end={today()}&station_ids={paste0(stations$id, collapse = ',')}"))
+
+wiendata <- fromJSON(rawToChar(tempwien$content))
+howadata <- fromJSON(rawToChar(temphowa$content))
+autdata <- fromJSON(rawToChar(tempaut$content))
+autdata_thisyear <- fromJSON(rawToChar(tempaut_thisyear$content))
+
+atmap <- gisco_get_countries(year = 2024, country = "AT", resolution = "3", epsg = 4326)
+
+# Daily data for Vienna
+wien <- tibble(
+  tlmax = wiendata$features$properties$parameters$tlmax$data,
+  tlmin = wiendata$features$properties$parameters$tlmin$data,
+  rr = wiendata$features$properties$parameters$rr$data) |>
+  mutate(timestamp = list(wiendata$timestamps)) |>
+  unnest(c(tlmax, tlmin, rr, timestamp)) |> 
+  mutate(timestamp = as.Date(timestamp))
+
+# Long time series for Hohe Warte
+howa <- tibble(
+  tlmax = howadata$features$properties$parameters$tlmax$data) |>
+  mutate(timestamp = list(howadata$timestamps)) |>
+  unnest(c(tlmax, timestamp)) |> 
+  mutate(timestamp = as.Date(timestamp))
+
+# Annual data for Austria except current year
+autmax_hist <- tibble(station = autdata$features$properties$station,
+  tlmax = autdata$features$properties$parameters$tlmax$data,
+  tage_tropen = autdata$features$properties$parameters$tage_tropen$data) |>
+  mutate(timestamp = list(autdata$timestamps)) |>
+  unnest(c(tlmax, tage_tropen, timestamp)) |> 
+  mutate(time = year(timestamp)) |>
+  left_join(stations, by = c("station" = "id")) 
+
+# Current year for Austria
+autmax_current <- tibble(station = autdata_thisyear$features$properties$station,
+  tlmax = autdata_thisyear$features$properties$parameters$tlmax$data) |>
+  mutate(timestamp = list(autdata_thisyear$timestamps)) |>
+  unnest(c(tlmax, timestamp)) |>
+  mutate(timestamp = as.Date(timestamp), hitzetag = ifelse(tlmax >= 30, 1, 0), time = year(timestamp)) |>
+  reframe(tlmax = max(tlmax, na.rm = TRUE), tage_tropen = sum(hitzetag, na.rm = TRUE), .by = c(station, time)) |>
+  left_join(stations, by = c("station" = "id")) 
+
+# Combined Austria data
+austria <- autmax_hist |> select(-timestamp) |> 
+  bind_rows(autmax_current) 
 
 url <- "https://en.wikipedia.org/wiki/List_of_weather_records#Highest_temperatures_ever_recorded"
 raw <- data.frame()
@@ -61,23 +118,19 @@ rekorde <- records |> clean_names() |>
 
 ```
 
+# Wien
+
 ## Row
 
 ```{r hitzetage}
-data <- fromJSON(rawToChar(tempwien$content))
-
-tmax <- map_dfc(data$features$properties$parameters$tlmax$data, ~ .x) |> 
-  mutate(time = as.Date(data$timestamps)) |> 
-  rename(tmax = `...1`) 
-
-tmax_filter <- tmax |> 
-  filter(month(time) < month(today()) |
-    (month(time) == month(today()) & day(time) <= day(today()))
+tmax_filter <- wien |> 
+  filter(month(timestamp) < month(today()) |
+    (month(timestamp) == month(today()) & day(timestamp) <= day(today()))
   )
 
 findat <- tmax_filter |>
-  filter(tmax >= 30) |>  count(year(time), .drop = FALSE) |> 
-  rename(year = `year(time)`)
+  filter(tlmax >= 30) |>  count(year(timestamp), .drop = FALSE) |> 
+  rename(year = `year(timestamp)`)
 
 lasttmax <- findat |> slice_max(year, n = 1) |> pull(n)
 avgtmax <- findat |> filter(year >= 1960, year <= 1990) |> summarise(avg = mean(n, na.rm = TRUE)) |> pull(avg)
@@ -92,20 +145,14 @@ value_box(
 ```
 
 ```{r tropennächte}
-data <- fromJSON(rawToChar(tempwien$content))
-
-tmin <- map_dfc(data$features$properties$parameters$tlmin$data, ~ .x) |> 
-  mutate(time = as.Date(data$timestamps)) |> 
-  rename(tmin = `...1`) 
-
-tmin_filter <- tmin |> 
-  filter(month(time) < month(today()) |
-    (month(time) == month(today()) & day(time) <= day(today()))
+tmin_filter <- wien |> 
+  filter(month(timestamp) < month(today()) |
+    (month(timestamp) == month(today()) & day(timestamp) <= day(today()))
   )
 
 findat <- tmin_filter |>
-  filter(tmin >= 20) |>  count(year(time), .drop = FALSE) |> 
-  rename(year = `year(time)`)
+  filter(tlmin >= 20) |>  count(year(timestamp), .drop = FALSE) |> 
+  rename(year = `year(timestamp)`)
 
 lasttmin <- findat |> slice_max(year, n = 1) |> pull(n)
 avgtmin <- findat |> filter(year >= 1960, year <= 1990) |> summarise(avg = mean(n, na.rm = TRUE)) |> pull(avg)
@@ -120,17 +167,16 @@ value_box(
 ```
 
 ```{r atrekord}
-atrekord <- rekorde |> 
-  filter(country == "Austria") |> 
-  mutate(date = as.Date(date, format = "%d %B %Y"))
-
+wienrekord <- austria |>
+  filter(state == "Wien") |>
+  slice_max(tlmax, n = 1)
 
 value_box(
   theme = value_box_theme(bg = "#c57300"),
   showcase = bsicons::bs_icon("thermometer-sun"),
-  title = "Hitzerekord in Österreich",
-  value = scales::comma(atrekord$temp, suffix = "°C", accuracy = .1),
-  p(glue::glue("gemessen am {format(max(atrekord$date), '%d.%m.%Y')}"))
+  title = "Hitzerekord in Wien",
+  value = scales::comma(wienrekord$tlmax, suffix = "°C", accuracy = .1),
+  p(glue::glue("gemessen {wienrekord$time} in {wienrekord$name}"))
 )
 ```
 
@@ -138,30 +184,40 @@ value_box(
 
 ### Column {width=55%}
 
-::: {.card title="Globale Hitzerekorde<i class='bi bi-globe-europe-africa'></i>" .fill}
+::: {.card title="Temperaturabweichung vom langfristigen Mittel (1900-2000)<i class='bi bi-hourglass-split'></i>" .fill}
 
-```{r rekorde}
-rekplot <- rekorde |> 
-  reframe(count = n(), countries = paste(glue::glue("{ccode} ({temp}°)"), collapse = "<br>"), .by = c(year, continent)) |>
-  ggplot(aes(x = year, y = count, fill=continent, 
-              text = glue::glue("{year}<br>{continent}: {count} Rekord{ifelse(count > 1, 'e', '')}<br>{countries}"))) +
-  geom_bar(stat = "identity", position = "stack") +
-  scale_x_continuous(breaks = seq(1900,2020,20), expand = expansion(mult = c(0.02, 0.02))) +
-  scale_fill_manual(values = met.brewer("Lakota"), name = NULL) +
-  labs(y = "Anzahl neuer Rekordwerte", x = NULL) +
-  theme_minimal(base_family = "Roboto Condensed", base_size = 14) +
-  theme(legend.position = "top",
-        legend.text = element_text(color = "white", size = 11),
-        plot.background = element_rect(fill = "transparent", color = NA),
-        panel.background = element_rect(fill = "transparent", color = NA),
-        panel.grid.minor = element_blank(),
-        panel.grid.major = element_line(linewidth = 0.3, color = alpha("white", 0.3)),
-        axis.title.y = element_text(color = "white", size = 11),
+```{r abweichungen}
+reference_means <- howa |> 
+  filter(year(timestamp) %in% 1900:2000) |> 
+  mutate(monthname = month(timestamp, label = T, abbr = T, locale = "de_DE.UTF-8")) |> 
+  summarise(ref_tlmax = mean(tlmax, na.rm = TRUE), .by = monthname)
+
+month_means <- howa |> 
+  mutate(monthname = month(timestamp, label = T, abbr = T, locale = "de_DE.UTF-8"),
+          yr = year(timestamp)) |> 
+  left_join(reference_means, by = "monthname") |> 
+  mutate(abw = tlmax - ref_tlmax) |> 
+  mutate(ihs = log(abw + sqrt(abw^2+1)))
+  
+abw <- month_means |> 
+  filter(year(timestamp) >= 1970) |> 
+  ggplot(aes(x = yr,  y = monthname, fill = ihs, text = glue::glue("{monthname} {yr}: {label_number(style_positive = 'plus', accuracy = 0.1)(abw)}°C"))) +
+  geom_tile(color = "white", size = 0.25) +
+  scale_x_continuous(position = "top", expand = c(0.005,0)) +
+  scale_y_discrete(limits = rev) +
+  scale_fill_gradient2(low = "darkblue", mid = "grey98", high = "darkred") +
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_family = "Roboto Condensed", base_size = 14) + 
+  theme(panel.grid = element_blank(),
+        plot.background = element_rect(fill= "transparent", color = NA),
+        panel.background = element_rect(fill= "transparent", color = NA),
+        legend.position = "none",
+        axis.text.y = element_text(),
         axis.text = element_text(color = "white"))
 
-ggplotly(rekplot, tooltip = "text") |>
-    layout(hovermode = "compare", legend = list(traceorder = "reversed", itemclick = "FALSE"),
-     hoverlabel = list(bgcolor = "white", font = list(family = "Roboto Condensed"))) |> 
+ggplotly(abw, tooltip = "text") |>
+    layout(hovermode = "closest", hoverlabel = list(bgcolor = "white", font = list(family = "Roboto Condensed", size = 16)),
+            xaxis=list(side="top")) |> 
     config(displayModeBar = FALSE, displaylogo = FALSE, responsive = TRUE)
 ```
 
@@ -175,13 +231,13 @@ ggplotly(rekplot, tooltip = "text") |>
 
 <div class="btn-group heat-toggle" role="group">
   <button id="show-hot" class="btn btn-hot active" type="button">
-    Hitzetage (>30°C)
+    Hitzetage (≥30°C)
   </button>
   <button id="show-night" class="btn btn-night" type="button">
-    Tropennächte (>20°C)
+    Tropennächte (≥20°C)
   </button>
   <button id="show-rain" class="btn btn-rain" type="button">
-    Starkregentage (>25l/m2)
+    Starkregentage (≥25l/m²)
   </button>
 </div>
 
@@ -238,7 +294,7 @@ p$x$data[[2]]$visible <- FALSE
 p$x$data[[3]]$visible <- FALSE
 
 p <- p |> 
-  layout(hoverlabel = list(bgcolor = "white", font = list(family = "Roboto Condensed", color = "black"))) |>
+  layout(hoverlabel = list(bgcolor = "white", font = list(family = "Roboto Condensed", color = "black", size = 16))) |>
   config(displayModeBar = FALSE, displaylogo = FALSE, responsive = TRUE)
 
 p
@@ -288,5 +344,155 @@ window.addEventListener("load", function () {
 #### Row
 
 ::: {.card title="Information<i class='bi bi-info-circle-fill'></i>" class="info-card" .flow}
-Quellen: Geosphere, Wikipedia. Stand: `r format(today(), '%d.%m.%Y')`.
+Quelle: Geosphere. Werte von Station Innere Stadt, außer Langfristtrend von Hohe Warte. Stand: `r format(today(), '%d.%m.%Y')`.
 :::
+
+# Österreich
+
+
+## Row
+
+```{r at_hitzetage}
+at_hitzetage <- austria |> 
+  filter(time == 2026) |> 
+  slice_max(tage_tropen, n = 1, with_ties = FALSE)
+
+value_box(
+  theme = value_box_theme(bg = "#8e0808"),
+  showcase = bsicons::bs_icon("sun"),
+  title = glue::glue("Die meisten Hitzetage {at_hitzetage$time}"),
+  value = scales::comma(at_hitzetage$tage_tropen),
+  p(glue::glue("gemessen in {at_hitzetage$name}"))
+)
+```
+
+```{r at_tagerekord}
+at_tagerekord <- austria |> 
+  slice_max(tage_tropen, n = 1, with_ties = FALSE)
+
+value_box(
+  theme = value_box_theme(bg = "#ba3f01"),
+  showcase = bsicons::bs_icon("thermometer-sun"),
+  title = "Rekord an Hitzetagen",
+  value = scales::comma(at_tagerekord$tage_tropen),
+  p(glue::glue("gemessen {at_tagerekord$time} in {at_tagerekord$name}"))
+)
+```
+
+```{r at_rekord}
+at_rekord <- austria |> 
+  slice_max(tlmax, n = 1, with_ties = FALSE)
+
+value_box(
+  theme = value_box_theme(bg = "#c57300"),
+  showcase = bsicons::bs_icon("fire"),
+  title = "Die heißeste Temperatur",
+  value = scales::comma(at_rekord$tlmax, suffix = "°C", accuracy = .1),
+  p(glue::glue("gemessen {at_rekord$time} in {at_rekord$name}"))
+)
+```
+
+## Row {.fill}
+
+### Column {width=55%}
+
+::: {.card title="Anzahl der Hitzetage in diesem Jahr<i class='bi bi-sun-fill'></i>" .fill}
+
+```{r atmap}
+tropentage_stations <- austria |> 
+  filter(!is.na(tage_tropen)) |> 
+  slice_max(time, n = 1, by = station)
+
+pal <- leaflet::colorNumeric("YlOrRd", domain = tropentage_stations$tage_tropen)
+
+leaflet(atmap, 
+    height = "100vh",
+    options = leafletOptions(minZoom = 6.8, maxZoom = 6.8, boxZoom = FALSE, zoomControl = FALSE, dragging = FALSE, keyboard = FALSE, doubleClickZoom = FALSE, attributionControl = FALSE)) |> 
+    addProviderTiles(providers$USGS.USTopo) |>
+    addProviderTiles(providers$Stadia.StamenTonerLines) |>
+    addCircleMarkers(data = tropentage_stations, lng = ~lon, lat = ~lat,
+    fillColor = ~pal(tage_tropen), weight = 1.5, color = "black", fillOpacity = 1, radius = 5.5,
+    label = ~lapply(glue::glue(
+      "<span style='color:darkred;font-size:150%;font-family:Roboto Condensed;'>{name}</span><br>",
+      "<span style='font-size:120%;font-family:Roboto Condensed;'>{time}: {tage_tropen} Hitzetage</span>"
+    ), htmltools::HTML),
+    labelOptions = labelOptions(direction = "top")) |>  
+    setView(lng = 13.5, lat = 47.5, 6.8)
+```
+
+:::
+
+### Column {.fill}
+
+::: {.card title="Jahreshöchstwerte seit 1950<i class='bi bi-thermometer-high'></i>" .fill}
+
+```{r heattab}
+austria |> drop_na() |> 
+  select(time, name, state, tlmax) |> 
+  slice_max(tlmax, by = time) |>
+  distinct() |> 
+  arrange(desc(tlmax)) |> 
+  DT::datatable(colnames = c("Jahr", "Station", "Bundesland", "Höchsttemperatur"), class = "display",
+                options = list(info = F, paging = F, searching = F)) |> 
+  formatStyle(columns = 1:4, fontSize = '80%')
+```
+
+:::
+
+# International
+
+## Row
+
+```{r int_timeline}
+timeline <- rekorde |> 
+  reframe(count = n(), countries = paste(glue::glue("{ccode} ({temp}°)"), collapse = "<br>"), .by = c(year, continent)) |> 
+  ggplot(aes(y = continent, x = year, color = continent, text = glue::glue("{year}<br>{countries}"))) +
+  geom_point(alpha = 0.8, aes(size = count)) +
+  geom_hline(aes(yintercept = continent, color = continent), linewidth = 0.6) +
+  scale_x_continuous(breaks = seq(1900,2020,20), expand = expansion(mult = c(0.05, 0.02))) +
+  scale_color_manual(values = met.brewer("Lakota"), name = NULL) +
+  scale_size_area(max_size = 7) +
+  labs(y = NULL, x = NULL) +
+  theme_minimal(base_family = "Roboto Condensed", base_size = 14) +
+  theme(legend.position = "none",
+        plot.background = element_rect(fill = "transparent", color = NA),
+        panel.background = element_rect(fill = "transparent", color = NA),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_line(linewidth = 0.3, color = alpha("white", 0.3)),
+        axis.text = element_text(color = "white", size = 13))
+
+
+time_rec <- ggplotly(timeline, tooltip = "text") |>
+    layout(hovermode = "compare", hoverlabel = list(bgcolor = "white", font = list(family = "Roboto Condensed"))) |> 
+    style(showlegend = FALSE) |>
+    config(displayModeBar = FALSE, displaylogo = FALSE, responsive = TRUE)
+
+rekplot <- rekorde |> 
+  reframe(count = n(), countries = paste(glue::glue("{ccode} ({temp}°)"), collapse = "<br>"), .by = c(year, continent)) |>
+  ggplot(aes(x = year, y = count, fill=continent, 
+              text = glue::glue("{year}<br>{continent}: {count} Rekord{ifelse(count > 1, 'e', '')}<br>{countries}"))) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_x_continuous(breaks = seq(1900,2020,20), expand = expansion(mult = c(0.02, 0.02))) +
+  scale_fill_manual(values = met.brewer("Lakota"), name = NULL) +
+  labs(y = "Anzahl neuer Rekordwerte", x = NULL) +
+  theme_minimal(base_family = "Roboto Condensed", base_size = 14) +
+  theme(legend.position = "top",
+        legend.text = element_text(color = "white", size = 13),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        panel.background = element_rect(fill = "transparent", color = NA),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_line(linewidth = 0.3, color = alpha("white", 0.3)),
+        axis.text = element_text(color = "white", size = 13))
+
+bar_rec <- ggplotly(rekplot, tooltip = "text") |>
+    layout(hovermode = "compare",
+    hoverlabel = list(bgcolor = "white", font = list(family = "Roboto Condensed"))) |> 
+    config(displayModeBar = FALSE, displaylogo = FALSE, responsive = TRUE)
+
+sum_stack_max <- rekplot$data |> summarise(total = sum(count), .by = year) |> pull(total) |> max()
+
+subplot(time_rec, bar_rec, nrows = 2, shareX = TRUE) |> 
+  layout(legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.15,
+    traceorder = "reversed", itemclick = "toggleothers"),
+    yaxis2 = list(autorange = FALSE, rangemode = "tozero"))
+```
