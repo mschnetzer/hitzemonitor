@@ -26,7 +26,7 @@ theme:
 #| echo: false
 #| message: false
 #| warning: false
-librarian::shelf(tidyverse,lubridate, httr, jsonlite, glue, scales, bslib, bsicons, quarto, gghighlight, rvest, janitor, stringi, countrycode, htmlwidgets, shiny, MetBrewer, plotly, giscoR, leaflet, DT, patchwork)
+librarian::shelf(tidyverse,lubridate, httr, jsonlite, glue, scales, bslib, bsicons, quarto, gghighlight, rvest, janitor, stringi, countrycode, htmlwidgets, shiny, MetBrewer, plotly, giscoR, DT, patchwork)
 ```
 
 ```{r data}
@@ -34,6 +34,7 @@ librarian::shelf(tidyverse,lubridate, httr, jsonlite, glue, scales, bslib, bsico
 #| echo: false
 #| message: false
 #| warning: false
+#| cache: true
  
 meta <- GET("https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1y/metadata")
 metadat <- fromJSON(rawToChar(meta$content))
@@ -344,7 +345,7 @@ window.addEventListener("load", function () {
 #### Row
 
 ::: {.card title="Information<i class='bi bi-info-circle-fill'></i>" class="info-card" .flow}
-Quelle: Geosphere. Werte von Station Innere Stadt, außer Langfristtrend von Hohe Warte. Stand: `r format(today(), '%d.%m.%Y')`.
+Quellen: Geosphere, Wikipedia. Werte für Wien von Station Innere Stadt, außer Langfristtrend von Hohe Warte. Stand: `r format(today(), '%d.%m.%Y')`.
 :::
 
 # Österreich
@@ -432,8 +433,8 @@ austria |> drop_na() |>
   slice_max(tlmax, by = time) |>
   distinct() |> 
   arrange(desc(tlmax)) |> 
-  DT::datatable(colnames = c("Jahr", "Station", "Bundesland", "Höchsttemperatur"), class = "display",
-                options = list(info = F, paging = F, searching = F)) |> 
+  DT::datatable(colnames = c("Jahr", "Station", "Bundesland", "Höchsttemperatur"), class = "display", rownames = FALSE,
+  options = list(info = F, paging = F, searching = F)) |> 
   formatStyle(columns = 1:4, fontSize = '80%')
 ```
 
@@ -442,6 +443,8 @@ austria |> drop_na() |>
 # International
 
 ## Row
+
+### Column {width=65%}
 
 ```{r int_timeline}
 timeline <- rekorde |> 
@@ -495,4 +498,19 @@ subplot(time_rec, bar_rec, nrows = 2, shareX = TRUE) |>
   layout(legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.15,
     traceorder = "reversed", itemclick = "toggleothers"),
     yaxis2 = list(autorange = FALSE, rangemode = "tozero"))
+```
+
+### Column {.fill}
+
+```{r int_table}
+rekorde <- rekorde |> 
+  mutate(country.de = countrycode(ccode, origin = "iso3c", destination = "country.name.de"))
+
+rekorde |>  
+  select(temp, year, country.de, continent) |>
+  arrange(desc(temp)) |>
+  DT::datatable(colnames = c("Maximum", "Jahr", "Land", "Kontinent"), class = "display", rownames = FALSE,
+  options = list(info = F, paging = F, searching = F)) |> 
+  formatStyle(columns = 1:4, fontSize = '80%') |> 
+  formatCurrency(columns = 1, currency = " °C", before = F, interval = 3, dec.mark = ",", digits = 1)
 ```
