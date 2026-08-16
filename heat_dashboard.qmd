@@ -446,6 +446,8 @@ austria |> drop_na() |>
 
 ### Column {width=65%}
 
+::: {.card title="Neue Höchstwerte im Zeitverlauf<i class='bi bi-globe-europe-africa'></i>" .fill}
+
 ```{r int_timeline}
 timeline <- rekorde |> 
   reframe(count = n(), countries = paste(glue::glue("{ccode} ({temp}°)"), collapse = "<br>"), .by = c(year, continent)) |> 
@@ -500,7 +502,11 @@ subplot(time_rec, bar_rec, nrows = 2, shareX = TRUE) |>
     yaxis2 = list(autorange = FALSE, rangemode = "tozero"))
 ```
 
+:::
+
 ### Column {.fill}
+
+::: {.card title="Internationale Höchstwerte<i class='bi bi-globe'></i>" .fill}
 
 ```{r int_table}
 rekorde <- rekorde |> 
@@ -514,3 +520,5 @@ rekorde |>
   formatStyle(columns = 1:4, fontSize = '80%') |> 
   formatCurrency(columns = 1, currency = " °C", before = F, interval = 3, dec.mark = ",", digits = 1)
 ```
+
+:::
