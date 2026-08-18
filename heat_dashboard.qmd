@@ -34,13 +34,14 @@ librarian::shelf(tidyverse,lubridate, httr, jsonlite, glue, scales, bslib, bsico
 #| echo: false
 #| message: false
 #| warning: false
-#| cache: true
- 
+
 meta <- GET("https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1y/metadata")
 metadat <- fromJSON(rawToChar(meta$content))
 stations <- map_dfc(metadat$stations, ~ .x) |> 
   filter(is_active == TRUE) |> 
-  select(id, name, state, lat, lon)
+  mutate(n = n(), .by = name) |> 
+  filter(n == 1 | type == "COMBINED") |> 
+  select(id, name, state, lat, lon, altitude)
 
 tempwien <- GET(glue::glue("https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d?parameters=tlmax,tlmin,rr&start=1985-01-01&end={today()}&station_ids=5925"))
 
@@ -55,7 +56,7 @@ howadata <- fromJSON(rawToChar(temphowa$content))
 autdata <- fromJSON(rawToChar(tempaut$content))
 autdata_thisyear <- fromJSON(rawToChar(tempaut_thisyear$content))
 
-atmap <- gisco_get_countries(year = 2024, country = "AT", resolution = "3", epsg = 4326)
+atmap <- gisco_get_nuts(year = 2024, country = "AT", nuts_level = "2", resolution = "3", epsg = 4326)
 
 # Daily data for Vienna
 wien <- tibble(
@@ -86,7 +87,8 @@ autmax_hist <- tibble(station = autdata$features$properties$station,
 autmax_current <- tibble(station = autdata_thisyear$features$properties$station,
   tlmax = autdata_thisyear$features$properties$parameters$tlmax$data) |>
   mutate(timestamp = list(autdata_thisyear$timestamps)) |>
-  unnest(c(tlmax, timestamp)) |>
+  unnest(c(tlmax, timestamp)) |> 
+  filter(!is.na(tlmax)) |>
   mutate(timestamp = as.Date(timestamp), hitzetag = ifelse(tlmax >= 30, 1, 0), time = year(timestamp)) |>
   reframe(tlmax = max(tlmax, na.rm = TRUE), tage_tropen = sum(hitzetag, na.rm = TRUE), .by = c(station, time)) |>
   left_join(stations, by = c("station" = "id")) 
@@ -404,10 +406,10 @@ heatmap <- atmap |>
   ggplot() + 
   geom_sf(fill = "gray95") +
   geom_point(data = austria |> filter(!is.na(tage_tropen)) |> slice_max(time, n = 1, by = name), 
-      aes(x = lon, y = lat, color = tage_tropen, text = glue::glue("<span style='color:darkred;font-size:120%;font-family:Roboto Condensed;'>{name}</span><br>",
-      "<span style='font-size:100%;font-family:Roboto Condensed;'>{time}: {tage_tropen} Hitzetage</span>")), size = 2) +
+      aes(x = lon, y = lat, color = tage_tropen, text = glue::glue("<span style='color:darkred;font-size:120%;font-family:Roboto Condensed;'>{name}</span><br><span style='font-size:100%;font-family:Roboto Condensed;'>Höhe: {label_number(accuracy = 1, big.mark = '.')(altitude)}m</span><br><span style='font-size:100%;font-family:Roboto Condensed;'>{time}: {tage_tropen} Hitzetage</span>")), size = 2) +
   scale_color_gradient(low = "yellow", high = "darkred") +
   labs(x = NULL, y = NULL, color = "Hitzetage", size = "Hitzetage") +
+  coord_sf(expand = FALSE) +
   theme_minimal(base_family = "Roboto Condensed", base_size = 14) +
   theme(legend.position = "none",
         plot.background = element_rect(fill = "transparent", color = NA),
