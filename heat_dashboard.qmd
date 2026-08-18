@@ -38,7 +38,7 @@ librarian::shelf(tidyverse,lubridate, httr, jsonlite, glue, scales, bslib, bsico
 meta <- GET("https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1y/metadata")
 metadat <- fromJSON(rawToChar(meta$content))
 stations <- map_dfc(metadat$stations, ~ .x) |> 
-  filter(is_active == TRUE) |> 
+  filter(is_active == TRUE & year(valid_to) >= year(today())) |> 
   mutate(n = n(), .by = name) |> 
   filter(n == 1 | type == "COMBINED") |> 
   select(id, name, state, lat, lon, altitude)
@@ -51,10 +51,13 @@ tempaut <- GET(glue::glue("https://dataset.api.hub.geosphere.at/v1/station/histo
 
 tempaut_thisyear <- GET(glue::glue("https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d?parameters=tlmax&start={year(today())}-01-01&end={today()}&station_ids={paste0(stations$id, collapse = ',')}"))
 
+tempglobal <- GET("https://www.ncei.noaa.gov/access/monitoring/climate-at-a-glance/global/time-series/globe/tavg/land/12/12/1900-2026/data.json")
+
 wiendata <- fromJSON(rawToChar(tempwien$content))
 howadata <- fromJSON(rawToChar(temphowa$content))
 autdata <- fromJSON(rawToChar(tempaut$content))
 autdata_thisyear <- fromJSON(rawToChar(tempaut_thisyear$content))
+globaldata <- fromJSON(rawToChar(tempglobal$content))
 
 atmap <- gisco_get_nuts(year = 2024, country = "AT", nuts_level = "2", resolution = "3", epsg = 4326)
 
@@ -92,6 +95,11 @@ autmax_current <- tibble(station = autdata_thisyear$features$properties$station,
   mutate(timestamp = as.Date(timestamp), hitzetag = ifelse(tlmax >= 30, 1, 0), time = year(timestamp)) |>
   reframe(tlmax = max(tlmax, na.rm = TRUE), tage_tropen = sum(hitzetag, na.rm = TRUE), .by = c(station, time)) |>
   left_join(stations, by = c("station" = "id")) 
+
+# Global temperature departure from long-term mean (1901-2000)
+globaldev <- tibble(
+  year = as.integer(names(globaldata$data)),
+  departure = map_dbl(globaldata$data, ~ .x$departure))
 
 # Combined Austria data
 austria <- autmax_hist |> select(-timestamp) |> 
@@ -347,7 +355,7 @@ window.addEventListener("load", function () {
 #### Row
 
 ::: {.card title="Information<i class='bi bi-info-circle-fill'></i>" class="info-card" .flow}
-Quellen: Geosphere, Wikipedia. Werte für Wien von Station Innere Stadt, außer Langfristtrend von Hohe Warte. Stand: `r format(today(), '%d.%m.%Y')`.
+Quellen: Geosphere, NOAAGlobalTemp, Wikipedia. Werte für Wien von Station Innere Stadt, außer Langfristtrend von Hohe Warte. Stand: `r format(today(), '%d.%m.%Y')`.
 :::
 
 # Österreich
@@ -448,31 +456,57 @@ austria |> drop_na() |>
 
 ### Column {width=65%}
 
-::: {.card title="Neue Höchstwerte im Zeitverlauf<i class='bi bi-globe-europe-africa'></i>" .fill}
+#### Row {.fill}
 
-```{r int_timeline}
-timeline <- rekorde |> 
-  reframe(count = n(), countries = paste(glue::glue("{ccode} ({temp}°)"), collapse = "<br>"), .by = c(year, continent)) |> 
-  ggplot(aes(y = continent, x = year, color = continent, text = glue::glue("{year}<br>{countries}"))) +
-  geom_point(alpha = 0.8, aes(size = count)) +
-  geom_hline(aes(yintercept = continent, color = continent), linewidth = 0.6) +
-  scale_x_continuous(breaks = seq(1900,2020,20), expand = expansion(mult = c(0.05, 0.02))) +
-  scale_color_manual(values = met.brewer("Lakota"), name = NULL) +
-  scale_size_area(max_size = 7) +
-  labs(y = NULL, x = NULL) +
+::: {.card title="Globale Temperaturabweichung vom langjährigen Schnitt (1901-2000)<i class='bi bi-graph-up'></i>" .fill}
+```{r globaldev}
+globalplot <- globaldev |> 
+  ggplot(aes(x = year, y = departure, fill = departure > 0, text = glue::glue("{year}: {label_number(accuracy = 0.01, style_positive = 'plus')(departure)}°C"))) +
+  geom_col() +
+  scale_fill_manual(values = c(`TRUE` = "darkred", `FALSE` = "darkblue"), guide = "none") +
+  scale_x_continuous(breaks = seq(1900,2020,20  ), expand = expansion(mult = c(0.02, 0.02))) +
+  scale_y_continuous(expand = expansion(mult = c(0.02, 0.02))) +
+  labs(x = NULL, y = NULL) +
   theme_minimal(base_family = "Roboto Condensed", base_size = 14) +
-  theme(legend.position = "none",
-        plot.background = element_rect(fill = "transparent", color = NA),
+  theme(plot.background = element_rect(fill = "transparent", color = NA),
         panel.background = element_rect(fill = "transparent", color = NA),
         panel.grid.minor = element_blank(),
         panel.grid.major = element_line(linewidth = 0.3, color = alpha("white", 0.3)),
-        axis.text = element_text(color = "white", size = 13))
+        axis.text = element_text(color = "white", size = 10)) 
 
-
-time_rec <- ggplotly(timeline, tooltip = "text") |>
+ggplotly(globalplot, tooltip = "text") |>
     layout(hovermode = "compare", hoverlabel = list(bgcolor = "white", font = list(family = "Roboto Condensed"))) |> 
-    style(showlegend = FALSE) |>
     config(displayModeBar = FALSE, displaylogo = FALSE, responsive = TRUE)
+```
+:::
+
+#### Row {.fill}
+
+::: {.card title="Neue Höchstwerte im Zeitverlauf<i class='bi bi-globe-europe-africa'></i>" .fill}
+
+```{r int_timeline}
+# timeline <- rekorde |> 
+#   reframe(count = n(), countries = paste(glue::glue("{ccode} ({temp}°)"), collapse = "<br>"), .by = c(year, continent)) |> 
+#   ggplot(aes(y = continent, x = year, color = continent, text = glue::glue("{year}<br>{countries}"))) +
+#   geom_point(alpha = 0.8, aes(size = count)) +
+#   geom_hline(aes(yintercept = continent, color = continent), linewidth = 0.6) +
+#   scale_x_continuous(breaks = seq(1900,2020,20), expand = expansion(mult = c(0.05, 0.02))) +
+#   scale_color_manual(values = met.brewer("Lakota"), name = NULL) +
+#   scale_size_area(max_size = 7) +
+#   labs(y = NULL, x = NULL) +
+#   theme_minimal(base_family = "Roboto Condensed", base_size = 14) +
+#   theme(legend.position = "none",
+#         plot.background = element_rect(fill = "transparent", color = NA),
+#         panel.background = element_rect(fill = "transparent", color = NA),
+#         panel.grid.minor = element_blank(),
+#         panel.grid.major = element_line(linewidth = 0.3, color = alpha("white", 0.3)),
+#         axis.text = element_text(color = "white", size = 13))
+
+
+# time_rec <- ggplotly(timeline, tooltip = "text") |>
+#     layout(hovermode = "compare", hoverlabel = list(bgcolor = "white", font = list(family = "Roboto Condensed"))) |> 
+#     style(showlegend = FALSE) |>
+#     config(displayModeBar = FALSE, displaylogo = FALSE, responsive = TRUE)
 
 rekplot <- rekorde |> 
   reframe(count = n(), countries = paste(glue::glue("{ccode} ({temp}°)"), collapse = "<br>"), .by = c(year, continent)) |>
@@ -481,27 +515,29 @@ rekplot <- rekorde |>
   geom_bar(stat = "identity", position = "stack") +
   scale_x_continuous(breaks = seq(1900,2020,20), expand = expansion(mult = c(0.02, 0.02))) +
   scale_fill_manual(values = met.brewer("Lakota"), name = NULL) +
-  labs(y = "Anzahl neuer Rekordwerte", x = NULL) +
+  labs(y = NULL, x = NULL) +
   theme_minimal(base_family = "Roboto Condensed", base_size = 14) +
-  theme(legend.position = "top",
-        legend.text = element_text(color = "white", size = 13),
+  theme(legend.text = element_text(color = "white", size = 12,
+                  margin = margin(l = 0)),
         plot.background = element_rect(fill = "transparent", color = NA),
         panel.background = element_rect(fill = "transparent", color = NA),
         panel.grid.minor = element_blank(),
         panel.grid.major = element_line(linewidth = 0.3, color = alpha("white", 0.3)),
-        axis.text = element_text(color = "white", size = 13))
+        axis.text = element_text(color = "white", size = 10))
 
 bar_rec <- ggplotly(rekplot, tooltip = "text") |>
     layout(hovermode = "compare",
-    hoverlabel = list(bgcolor = "white", font = list(family = "Roboto Condensed"))) |> 
+    hoverlabel = list(bgcolor = "white", font = list(family = "Roboto Condensed")),
+    legend = list(x = 0.05, y = 0.98, xanchor = "left", yanchor = "top",
+                  orientation = "h", traceorder = "reversed", itemclick = FALSE, bgcolor = "rgba(0,0,0,0)")) |> 
     config(displayModeBar = FALSE, displaylogo = FALSE, responsive = TRUE)
 
-sum_stack_max <- rekplot$data |> summarise(total = sum(count), .by = year) |> pull(total) |> max()
+# sum_stack_max <- rekplot$data |> summarise(total = sum(count), .by = year) |> pull(total) |> max()
 
-subplot(time_rec, bar_rec, nrows = 2, shareX = TRUE) |> 
-  layout(legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.15,
-    traceorder = "reversed", itemclick = "toggleothers"),
-    yaxis2 = list(autorange = FALSE, rangemode = "tozero"))
+# subplot(time_rec, bar_rec, nrows = 2, shareX = TRUE) |> 
+#   layout(yaxis2 = list(autorange = FALSE, rangemode = "tozero"))
+
+bar_rec
 ```
 
 :::
