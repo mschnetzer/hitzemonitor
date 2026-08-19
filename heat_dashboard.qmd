@@ -407,7 +407,7 @@ value_box(
 
 ### Column {width=55%}
 
-::: {.card title="Anzahl der Hitzetage in diesem Jahr<i class='bi bi-sun-fill'></i>" .fill}
+::: {.card title="Anzahl der Hitzetage (≥30°C) in diesem Jahr<i class='bi bi-sun-fill'></i>" .fill}
 
 ```{r atmap}
 heatmap <- atmap |> 
