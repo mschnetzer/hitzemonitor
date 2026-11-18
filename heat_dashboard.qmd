@@ -109,7 +109,7 @@ url <- "https://en.wikipedia.org/wiki/List_of_weather_records#Highest_temperatur
 raw <- data.frame()
 records <- url |> 
   read_html() |> 
-  html_nodes(xpath = '//*[@id="mw1A"]') |> 
+  html_nodes(xpath = '//*[@id="mw1Q"]') |> 
   html_table(fill=TRUE) |> 
   nth(1)
 
